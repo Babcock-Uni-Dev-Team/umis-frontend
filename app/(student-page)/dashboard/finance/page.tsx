@@ -22,8 +22,10 @@ import {
   getSemesterRegistrationStatusAction,
   getFinancialRegSummaryAction,
   getFinanceRegistrationAction,
+  getClearanceRequirementsAction,
   type FinanceRegistrationData,
   type FinancialRegSummaryData,
+  type ClearanceRequirementsData,
 } from "@/app/actions/registration";
 import {
   buildPrintReceiptUrl,
@@ -143,6 +145,7 @@ const { semesterInfo, setSemesterInfo, isFinancialSubmitted, payState, registere
       payState !== "completed");
   const [financeCatalog, setFinanceCatalog] = useState<FinanceRegistrationData | null>(null);
   const [regSummary, setRegSummary] = useState<FinancialRegSummaryData | null>(null);
+  const [clearanceData, setClearanceData] = useState<ClearanceRequirementsData | null>(null);
   const [studentFees, setStudentFees] = useState<StudentFeesData | null>(null);
   const [isLoadingFees, setIsLoadingFees] = useState(true);
   const [isFundWalletModalOpen, setIsFundWalletModalOpen] = useState(false);
@@ -166,6 +169,9 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
     }).catch((err) => {
       console.warn("Failed to reload student fees:", err);
     });
+    getClearanceRequirementsAction().then((res) => {
+      if (res.data) setClearanceData(res.data);
+    }).catch(() => {});
   }, []);
 
   const loadWalletHistory = useCallback(async () => {
@@ -233,6 +239,11 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
     getFinanceRegistrationAction()
       .then((res) => {
         if (res.data) setFinanceCatalog(res.data);
+      })
+      .catch(() => {});
+    getClearanceRequirementsAction()
+      .then((res) => {
+        if (res.data) setClearanceData(res.data);
       })
       .catch(() => {});
   }, [fetchBalance, setSemesterInfo]);
@@ -358,7 +369,7 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
 
   const progressPercent = paymentProgress(studentFees?.estimated_semester_fee ?? 0, paidAmount, outstandingAmount);
 
-  const isFinancialApproved = progressPercent >= 75;
+  const isFinancialApproved = Boolean(clearanceData?.finace_approval);
 
   const standingBadge = progressPercent >= 100
     ? {

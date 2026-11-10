@@ -148,3 +148,88 @@ export const registerSemesterAction = async (): Promise<RegisterSemesterResult> 
     };
   }
 };
+
+// ── Clearance Requirements (GET /api/v1/student/clearance-requirements) ─────
+
+interface RawClearanceRequirementsData {
+  active_semester?: boolean;
+  finace_approval?: boolean;
+  finance_approval?: boolean;
+  course_advisor?: boolean;
+  student_development?: boolean;
+  overload_approval?: boolean;
+  student_type?: string;
+}
+
+export interface ClearanceRequirementsData {
+  active_semester: boolean;
+  finace_approval: boolean;
+  course_advisor: boolean;
+  student_development: boolean;
+  overload_approval: boolean;
+  student_type: string;
+}
+
+export interface ClearanceRequirementsResult {
+  data?: ClearanceRequirementsData;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Fetches the student's registration clearance requirements from the backend.
+ * Endpoint: GET /api/v1/student/clearance-requirements
+ */
+export const getClearanceRequirementsAction = async (): Promise<ClearanceRequirementsResult> => {
+  const apiUrl = process.env.API_URL;
+  if (!apiUrl) {
+    console.error("API_URL is not defined in environment variables");
+    return { error: "Internal server error: Missing API configuration" };
+  }
+
+  const token = await getSessionToken();
+  if (!token) {
+    return { error: "You are not authenticated. Please log in again." };
+  }
+
+  try {
+    const response = await loggedFetch(`${apiUrl}/api/v1/student/clearance-requirements`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to fetch clearance requirements";
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch {
+        // keep fallback
+      }
+      return { error: errorMessage };
+    }
+
+    const json = await response.json();
+    const raw: RawClearanceRequirementsData = json?.data ?? {};
+    return {
+      data: {
+        active_semester: Boolean(raw.active_semester),
+        finace_approval: Boolean(raw.finace_approval ?? raw.finance_approval),
+        course_advisor: Boolean(raw.course_advisor),
+        student_development: Boolean(raw.student_development),
+        overload_approval: Boolean(raw.overload_approval),
+        student_type: typeof raw.student_type === "string" ? raw.student_type : "",
+      },
+      message: json?.message,
+    };
+  } catch (error) {
+    console.error("getClearanceRequirementsAction error:", error);
+    return {
+      error: "Could not connect to the server. Please try again later.",
+    };
+  }
+};
