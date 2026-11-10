@@ -14,25 +14,29 @@ import { lecturerApi } from "@/lib/lecturer/api";
 import { appNow } from "@/lib/lecturer/clock";
 import { daysBetween, fullName, plural, shortDate, timeAgo } from "@/lib/lecturer/format";
 import { useLecturerQuery, useMutation } from "@/lib/lecturer/query";
-import { allChecksPassed, RETURN_REASON_LABELS } from "@/lib/lecturer/rules";
+import { allChecksPassed, canReturn, RETURN_REASON_LABELS } from "@/lib/lecturer/rules";
 import type { Registration, RegistrationStatus } from "@/lib/lecturer/types";
 import { cn } from "@/lib/utils";
 import { Page } from "@/components/lecturer/shell/page";
 import { ReturnSheet } from "@/components/lecturer/advising/return-sheet";
+import { AdviseeRoster } from "@/components/lecturer/advising/advisee-roster";
 import { Btn, CardSkeleton, Checkbox, Chip, ErrorState, ExplainedEmpty, Input, PersonAvatar, Segmented } from "@/components/lecturer/ui/primitives";
 import { Sheet } from "@/components/lecturer/ui/sheet";
 
-const SEGMENTS: { value: RegistrationStatus; label: string }[] = [
+type View = RegistrationStatus | "all";
+
+const SEGMENTS: { value: View; label: string }[] = [
   { value: "to_review", label: "To review" },
   { value: "returned", label: "Returned" },
   { value: "approved_advisor", label: "Approved by you" },
   { value: "approved_school", label: "Approved by school" },
   { value: "not_submitted", label: "Not submitted" },
+  { value: "all", label: "All students" },
 ];
 
 export default function AdvisingPage() {
   const q = useLecturerQuery("advising", () => lecturerApi.getAdvising());
-  const [segment, setSegment] = useState<RegistrationStatus>("to_review");
+  const [segment, setSegment] = useState<View>("to_review");
   const [checkFilter, setCheckFilter] = useState<"all" | "passed" | "failed">("all");
   const [term, setTerm] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -43,8 +47,9 @@ export default function AdvisingPage() {
   const now = appNow();
 
   const counts = useMemo(() => {
-    const c = Object.fromEntries(SEGMENTS.map((s) => [s.value, 0])) as Record<RegistrationStatus, number>;
+    const c = Object.fromEntries(SEGMENTS.map((s) => [s.value, 0])) as Record<View, number>;
     q.data?.registrations.forEach((r) => c[r.status]++);
+    c.all = q.data?.registrations.length ?? 0;
     return c;
   }, [q.data]);
 
@@ -74,6 +79,8 @@ export default function AdvisingPage() {
   const daysLeft = daysBetween(now, w.closesAt);
   const eligible = rows.filter((r) => r.status === "to_review" && allChecksPassed(r));
   const selectedRows = eligible.filter((r) => selected.has(r.id));
+  const allEligibleSelected = eligible.length > 0 && selectedRows.length === eligible.length;
+  const needsSingle = rows.filter((r) => r.status === "to_review" && !allChecksPassed(r)).length;
 
   const approveOne = async (r: Registration) => {
     const res = await approve.mutate([r.id]).catch(() => undefined);
@@ -130,7 +137,9 @@ export default function AdvisingPage() {
         )}
       </div>
 
-      {segment === "to_review" && counts.to_review === 0 ? (
+      {segment === "all" ? (
+        <AdviseeRoster level={w.level} term={term} />
+      ) : segment === "to_review" && counts.to_review === 0 ? (
         <ExplainedEmpty
           icon={CheckCircle2}
           title="All submitted registrations are decided"
@@ -146,6 +155,39 @@ export default function AdvisingPage() {
       ) : rows.length === 0 ? (
         <ExplainedEmpty compact icon={ClipboardCheck} title="Nobody here" reason={term ? "No advisee matches your search." : "No registrations at this stage."} />
       ) : (
+        <>
+        {segment === "to_review" && (
+          <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[20px] border border-gray-200 bg-white py-1 pr-3 dark:border-gray-800 dark:bg-gray-900">
+            <Checkbox
+              className="ml-1"
+              label={allEligibleSelected ? "Deselect all" : "Select all registrations that passed every check"}
+              checked={allEligibleSelected}
+              indeterminate={selectedRows.length > 0 && !allEligibleSelected}
+              disabled={eligible.length === 0}
+              onChange={() => setSelected(allEligibleSelected ? new Set() : new Set(eligible.map((r) => r.id)))}
+            />
+            <p className="min-w-0 flex-1 text-[14px]">
+              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                {selectedRows.length > 0 ? `${selectedRows.length} of ${eligible.length} selected` : eligible.length > 0 ? "Select all" : "Nothing to select"}
+              </span>
+              <span className="text-[13px] text-gray-500 dark:text-gray-400">
+                {" · "}
+                {eligible.length > 0 ? `${plural(eligible.length, "registration")} passed every check` : "none passed every check"}
+                {needsSingle > 0 && `, ${needsSingle} need${needsSingle === 1 ? "s" : ""} a single decision`}
+              </span>
+            </p>
+            {selectedRows.length > 0 && (
+              <Btn size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Deselect all
+              </Btn>
+            )}
+            {eligible.length > 0 && !allEligibleSelected && (
+              <Btn size="sm" variant="ghost" onClick={() => setSelected(new Set(eligible.map((r) => r.id)))}>
+                Select all
+              </Btn>
+            )}
+          </div>
+        )}
         <ul className="flex flex-col gap-2.5 pb-24">
           {rows.map((r) => {
             const passed = allChecksPassed(r);
@@ -187,12 +229,12 @@ export default function AdvisingPage() {
                     </div>
                   </div>
                 </Link>
-                {r.status === "to_review" && (
+                {canReturn(r.status) && (
                   <div className="hidden gap-2 md:flex">
                     <Btn size="sm" variant="secondary" icon={Undo2} onClick={() => setReturning(r)}>
                       Return
                     </Btn>
-                    {passed && (
+                    {r.status === "to_review" && passed && (
                       <Btn size="sm" variant="success" icon={Check} disabled={approve.pending} onClick={() => approveOne(r)}>
                         Approve
                       </Btn>
@@ -204,10 +246,11 @@ export default function AdvisingPage() {
             );
           })}
         </ul>
+        </>
       )}
 
       {/* Floating pill action bar (Linktree-style) */}
-      {segment === "to_review" && eligible.length > 0 && (
+      {segment === "to_review" && selectedRows.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-[92px] z-40 flex justify-center px-4 md:bottom-8 md:pl-64">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-gray-900 p-1.5 pl-5 text-white shadow-2xl dark:bg-white dark:text-gray-900">
             <span className="text-[13px] font-semibold">{selectedRows.length ? `${selectedRows.length} selected` : `${eligible.length} passed every check`}</span>
