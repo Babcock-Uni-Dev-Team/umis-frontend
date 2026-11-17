@@ -14,6 +14,7 @@ import { PayOutstandingModal } from "@/components/fees/pay-outstanding-modal";
 import { getStudentFeesAction } from "@/app/actions/payment";
 import { confirmWalletFunding } from "@/lib/payments/wallet-funding";
 import { paymentProgress } from "@/lib/payments/fee-progress";
+import { ExamEligibility } from "@/components/finance/exam-eligibility";
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import type { StudentFeesData } from "@/app/actions/payment.types";
 import { useWalletStore } from "@/hooks/use-wallet-store";
@@ -403,7 +404,7 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-3">
               <div className="flex justify-between items-end mb-2">
                 <span className="text-[18px] font-bold text-gray-900 dark:text-gray-100">
                   Payment Progress {isLoadingFees && !studentFees ? "..." : `${progressPercent}%`}
@@ -412,6 +413,7 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
                   {isLoadingFees && !studentFees ? "..." : `${progressPercent}%`}
                 </span>
               </div>
+              <div className="relative">
               <div className="h-3 w-full bg-white/60 dark:bg-white/20 rounded-full overflow-hidden transition-colors">
                 <div
                   className={cn(
@@ -425,15 +427,30 @@ const [activeHistoryTab, setActiveHistoryTab] = useState<"payment" | "school-fee
                   style={{ width: `${isLoadingFees && !studentFees ? 0 : progressPercent}%` }}
                 ></div>
               </div>
+              {/* 75%: what's needed to write mid-semester exams */}
+              <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full bg-gray-500/70 dark:bg-gray-300/70" style={{ left: "75%" }} title="75% needed for mid-semester exams" aria-hidden />
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2 items-start text-[#1E40AF] dark:text-[#60a5fa]">
-            <Info className="w-5 h-5 shrink-0" />
-            <p className="text-[14px] leading-relaxed">
-              You must achieve a payment of at least <span className="font-bold">75% payment</span> in order for you to be allowed to write your mid-semester
-            </p>
-          </div>
+          {/* What's still needed for the 75% rule, and the next step; the plain rule until fees load */}
+          {studentFees ? (
+            <ExamEligibility
+              variant="inline"
+              semesterFee={studentFees.estimated_semester_fee}
+              paid={paidAmount}
+              outstanding={rawOutstanding}
+              wallet={balance}
+              walletUnavailable={!!walletError}
+            />
+          ) : (
+            <div className="flex gap-2 items-start text-[#1E40AF] dark:text-[#60a5fa]">
+              <Info className="w-5 h-5 shrink-0" />
+              <p className="text-[14px] leading-relaxed">
+                You must achieve a payment of at least <span className="font-bold">75% payment</span> in order for you to be allowed to write your mid-semester
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Right: Financial Approval (takes 1 column) */}

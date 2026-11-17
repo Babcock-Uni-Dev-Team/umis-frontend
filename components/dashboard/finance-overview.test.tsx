@@ -124,6 +124,48 @@ describe("FinanceOverview Component", () => {
     });
   });
 
+  it("leads Next Payment with what's still needed for mid-semester exams", async () => {
+    useWalletStore.setState({ balance: 500000 });
+    vi.mocked(paymentActions.getStudentFeesAction).mockResolvedValueOnce({
+      success: true,
+      data: {
+        estimated_full_session_fee: 4500000,
+        estimated_semester_fee: 2000000,
+        amount_paid_for_semester: 500000,
+        total_outstanding_fees: 0,
+      },
+    });
+
+    render(<FinanceOverview />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/more to write your mid-semester exams/).textContent).toContain("₦1,000,000");
+      expect(screen.getByText(/25% of this semester/)).toBeDefined();
+      expect(screen.getByRole("link", { name: /fund your wallet/i })).toBeDefined();
+    });
+  });
+
+  it("offers Pay School Fees once the wallet covers the 75%, even short of the whole semester", async () => {
+    vi.mocked(paymentActions.getWalletBalanceAction).mockResolvedValueOnce({ success: true, balance: 1200000, rawBalance: "1200000" });
+    useWalletStore.setState({ balance: 1200000 });
+    vi.mocked(paymentActions.getStudentFeesAction).mockResolvedValueOnce({
+      success: true,
+      data: {
+        estimated_full_session_fee: 4500000,
+        estimated_semester_fee: 2000000,
+        amount_paid_for_semester: 500000,
+        total_outstanding_fees: 0,
+      },
+    });
+
+    render(<FinanceOverview />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/your wallet already covers it/)).toBeDefined();
+      expect(screen.getByRole("link", { name: /pay school fees/i }).getAttribute("href")).toBe("/dashboard/finance/fees");
+    });
+  });
+
   it("shows 'Pay School Fees' button pointing to financial registration flow when wallet balance is sufficient but registration not started", async () => {
     vi.mocked(paymentActions.getWalletBalanceAction).mockResolvedValueOnce({
       success: true,
