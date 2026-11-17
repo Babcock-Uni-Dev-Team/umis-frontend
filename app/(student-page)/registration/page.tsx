@@ -19,9 +19,33 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { actionKey, notify } from "@/lib/notifications/bus";
-import { getSemesterRegistrationStatusAction, registerSemesterAction, getHasSubmittedCoursesAction } from "@/app/actions/registration";
+import {
+  getSemesterRegistrationStatusAction,
+  registerSemesterAction,
+  getHasSubmittedCoursesAction,
+  getFinancialRegSummaryAction,
+  getFinanceRegistrationAction,
+  getClearanceRequirementsAction,
+  type FinanceRegistrationData,
+  type FinancialRegSummaryData,
+  type ClearanceRequirementsData,
+} from "@/app/actions/registration";
 import { refreshAcademicStandingAction } from "@/app/actions/user";
 import { getStudentFeesAction } from "@/app/actions/payment";
+import type { StudentFeesData } from "@/app/actions/payment.types";
+import {
+  getOfflineDraft,
+  OFFLINE_FINANCE_REG_KEY,
+  type FinanceRegistrationDraft,
+} from "@/lib/offline-storage";
+import {
+  buildPrintReceiptUrl,
+  getBackendReference,
+  isFinancialRegComplete,
+  registrationTotal,
+  resolveRegistrationPlan,
+  stableReceiptRef,
+} from "@/lib/payments/registration-receipt";
 import { needsPasswordChange, rememberDefaultPassword } from "@/lib/student/default-password";
 import { SemesterRegistrationConfirmModal } from "@/components/registration/registration-status-modals";
 import { FundWalletModal } from "@/components/fees/fund-wallet-modal";
@@ -56,6 +80,7 @@ export default function RegistrationPage() {
   const regState = isMounted ? store.regState : "not_started";
   const payState = isMounted ? store.payState : "not_started";
   const isFinancialSubmitted = isMounted ? store.isFinancialSubmitted : false;
+  const registeredPlan = isMounted ? store.registeredPlan : null;
 
   // ── Semester info from store ───────────────────────────────────────────────
   const {
@@ -87,16 +112,99 @@ export default function RegistrationPage() {
   // Derived boolean — true only if student has commenced registration for the semester
   const isRegisteredForSemester = Boolean(semesterInfo?.check);
 
+  // Financial registration state (mirrors /dashboard/finance)
+  const [studentFees, setStudentFees] = useState<StudentFeesData | null>(null);
+  const [financeCatalog, setFinanceCatalog] = useState<FinanceRegistrationData | null>(null);
+  const [regSummary, setRegSummary] = useState<FinancialRegSummaryData | null>(null);
+  const [clearanceData, setClearanceData] = useState<ClearanceRequirementsData | null>(null);
+  const [hasFinanceDraft, setHasFinanceDraft] = useState(false);
+  const [hasBackendFinanceSelections, setHasBackendFinanceSelections] = useState(false);
+
   // Outstanding fees (previous semesters included), same source as the Finance page.
   // Under ₦1 is treated as rounding, not debt. null = not loaded or couldn't load.
   const [outstanding, setOutstanding] = useState<number | null>(null);
   useEffect(() => {
     getStudentFeesAction()
-      .then((res) => setOutstanding(res.success && res.data ? Math.abs(res.data.total_outstanding_fees) : null))
+      .then((res) => {
+        if (res.success && res.data) {
+          setStudentFees(res.data);
+          setOutstanding(Math.abs(res.data.total_outstanding_fees));
+        } else {
+          setOutstanding(null);
+        }
+      })
       .catch(() => setOutstanding(null));
+    getOfflineDraft<FinanceRegistrationDraft>(OFFLINE_FINANCE_REG_KEY)
+      .then((draft) => {
+        if (
+          draft &&
+          (draft.currentStep > 1 ||
+            Boolean(draft.selectedResidence) ||
+            Boolean(draft.selectedWorshipCenterId) ||
+            Boolean(draft.selectedMealPlan) ||
+            draft.customAmount !== null)
+        ) {
+          setHasFinanceDraft(true);
+        } else {
+          setHasFinanceDraft(false);
+        }
+      })
+      .catch(() => setHasFinanceDraft(false));
+    getFinancialRegSummaryAction()
+      .then((res) => {
+        if (res.data) {
+          const hasSelections = Boolean(
+            res.data.semester_residence ||
+              res.data.worship_center ||
+              res.data.meal_type
+          );
+          setHasBackendFinanceSelections(hasSelections);
+          setRegSummary(res.data);
+        }
+      })
+      .catch(() => {});
+    getFinanceRegistrationAction()
+      .then((res) => {
+        if (res.data) setFinanceCatalog(res.data);
+      })
+      .catch(() => {});
+    getClearanceRequirementsAction()
+      .then((res) => {
+        if (res.data) setClearanceData(res.data);
+      })
+      .catch(() => {});
   }, []);
   const owesFees = outstanding !== null && outstanding >= 1;
   const outstandingLabel = outstanding !== null ? `₦${outstanding.toLocaleString(undefined, { minimumFractionDigits: outstanding % 1 ? 2 : 0, maximumFractionDigits: 2 })}` : "";
+
+  const paidAmount = studentFees?.amount_paid_for_semester ?? 0;
+  const registrationPlan = resolveRegistrationPlan({
+    remembered: registeredPlan,
+    finance: financeCatalog,
+    summary: regSummary,
+    fees: studentFees,
+  });
+  const registrationCost = registrationTotal(financeCatalog, regSummary, registrationPlan);
+  const isFinancialRegDone = isFinancialRegComplete(
+    Boolean(regSummary?.lock_financial_reg),
+    registrationCost,
+    paidAmount
+  );
+  const isFinancialRegInProgress =
+    !isFinancialRegDone &&
+    (hasBackendFinanceSelections ||
+      ((hasFinanceDraft || isFinancialSubmitted || payState === "in_progress") &&
+        payState !== "completed"));
+
+  const handlePrintReceipt = () => {
+    const ref = stableReceiptRef({
+      matric: matricNo,
+      session: semesterInfo?.semester,
+      plan: registrationPlan,
+      backendRef: getBackendReference(regSummary, studentFees),
+    });
+    router.push(buildPrintReceiptUrl({ ref, amount: registrationCost, plan: registrationPlan }));
+  };
 
   // Show the stored status straight away, but always refresh it: the stored copy can be
   // stale (commenced on another device, or an older visit), which used to show
@@ -187,32 +295,32 @@ if (!isRegisteredForSemester) {
   };
 
   const getPayBannerProps = () => {
-    if (!isRegisteredForSemester && !isLoadingStatus) {
+    if (!isRegisteredForSemester && !isFinancialRegDone && !isLoadingStatus) {
       return {
-        buttonText: "Financial registration",
+        buttonText: "Start Financial Registration",
         buttonVariant: "outline" as const,
         description: "Commence registration first to access financial registration.",
         disabled: true,
       };
     }
-    if (payState === "completed") {
+    if (isFinancialRegDone) {
       return {
-        buttonText: "View Receipt",
+        buttonText: "Print Receipt",
         buttonVariant: "outline" as const,
         description: "Payment successful. You can view or download your receipt.",
         disabled: false,
       };
     }
-    if (payState === "in_progress" || isFinancialSubmitted) {
+    if (isFinancialRegInProgress) {
       return {
-        buttonText: "Pay School Fees",
-        buttonVariant: "primary" as const,
-        description: "Your financial selections have been submitted and locked. Proceed to pay your school fees.",
+        buttonText: "Complete Financial Registration",
+        buttonVariant: "outline" as const,
+        description: "Review your term details and complete your financial registration.",
         disabled: false,
       };
     }
     return {
-      buttonText: "Financial registration",
+      buttonText: "Start Financial Registration",
       buttonVariant: "outline" as const,
       description: "Review your term details and begin the registration process",
       disabled: false,
@@ -284,16 +392,14 @@ if (!semesterInfo?.check) {
           description={payProps.description}
           buttonText={payProps.buttonText}
           buttonVariant={payProps.buttonVariant}
-          gradientClass={payState === 'completed' ? "bg-gradient-to-br from-[#c2f5e1] to-[#e6fff5] dark:from-[#0a3825] dark:to-[#042114]" : "bg-gradient-to-br from-[#dcd6ff] to-[#cbc2ff] dark:from-[#2e234a] dark:to-[#1e1430]"}
+          gradientClass={isFinancialRegDone ? "bg-gradient-to-br from-[#c2f5e1] to-[#e6fff5] dark:from-[#0a3825] dark:to-[#042114]" : "bg-gradient-to-br from-[#dcd6ff] to-[#cbc2ff] dark:from-[#2e234a] dark:to-[#1e1430]"}
           illustrationSrc="/Pay-image.png"
           disabled={payProps.disabled}
           onClick={() => {
             if (payProps.disabled) return;
-            if (payState === "completed") {
-              router.push("/dashboard/finance/receipt");
-            } else if (payState === "in_progress" || isFinancialSubmitted) {
-              router.push("/dashboard/finance/fees/payment?step=5");
-            } else {
+            if (isFinancialRegDone) {
+              handlePrintReceipt();
+            } else if (isRegisteredForSemester) {
               router.push("/dashboard/finance/fees");
             }
           }}
@@ -312,8 +418,8 @@ if (!semesterInfo?.check) {
             <div className="flex flex-col">
               <span className="text-[13px] font-bold text-[#0a0a0a] dark:text-gray-100">{[
                 regState === "completed",
-                payState === "completed",
-                true, // Course Advisor
+                Boolean(clearanceData?.finace_approval),
+                Boolean(clearanceData?.course_advisor), // Course Advisor
                 false, // Student Development
                 false, // Registry
                 false, // Overload Request
@@ -339,15 +445,15 @@ if (!semesterInfo?.check) {
             icon={CreditCard}
             title="Finance"
             description="Tuition and fee clearance from Bursary"
-            status={payState === "completed" ? "approved" : (payState === "in_progress" || isFinancialSubmitted ? "pending" : "not_approved")}
-            actionText="Fund Wallet"
+            status={clearanceData?.finace_approval ? "approved" : (isFinancialRegInProgress ? "pending" : "not_approved")}
+            // actionText="Fund Wallet"
             onAction={() => setIsFundWalletModalOpen(true)}
           />
           <ClearanceRequirement 
             icon={UserCheck}
             title="Course Advisor"
             description="Approval of selected courses for the semester"
-            status="approved"
+            status={clearanceData?.course_advisor ? "approved" : "pending"}
           />
           <ClearanceRequirement 
             icon={Users}
