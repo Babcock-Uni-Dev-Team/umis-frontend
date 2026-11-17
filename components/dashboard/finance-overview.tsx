@@ -7,6 +7,7 @@ import { getStudentFeesAction } from "@/app/actions/payment";
 import type { StudentFeesData } from "@/app/actions/payment.types";
 import { useWalletStore } from "@/hooks/use-wallet-store";
 import { paymentProgress, semesterAmountDue } from "@/lib/payments/fee-progress";
+import { examEligibility } from "@/lib/payments/exam-eligibility";
 import { useRegistrationStore } from "@/hooks/use-registration-store";
 import { getOfflineDraft, OFFLINE_FINANCE_REG_KEY, FinanceRegistrationDraft } from "@/lib/offline-storage";
 
@@ -82,6 +83,15 @@ const { isFinancialSubmitted, payState } = useRegistrationStore();
 const hasSelectedAll = isFinancialSubmitted || payState === "in_progress" || hasCompletedSelections;
   // An unreadable balance says nothing about the shortfall, so no amount is pre-filled
   const shortfall = walletError ? 0 : Math.max(0, amountDue - walletBalance);
+
+  // The 75% rule for mid-semester exams leads the Next Payment panel while it isn't met
+  const exams = studentFees
+    ? examEligibility({ semesterFee: estimatedSemesterFee, paid: paidAmount, outstanding: rawOutstanding, wallet: walletError ? null : balance })
+    : null;
+  const examsPending = exams?.status === "wallet-covers" || exams?.status === "needs-payment";
+  // Enough in the wallet for the 75% counts as ready to pay, even before the whole semester is covered
+  const canPayNow = hasEnoughForSemester || exams?.status === "wallet-covers";
+  const naira = (n: number) => `₦${n.toLocaleString(undefined, { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-[20px] border border-gray-200 dark:border-gray-800 p-5 md:p-6 flex flex-col h-full transition-colors duration-200">
@@ -177,15 +187,27 @@ const hasSelectedAll = isFinancialSubmitted || payState === "in_progress" || has
         </div>
       </div>
 
-      {/* Next Payment */}
-      <div className="mt-auto bg-[#e5ecfc] dark:bg-gray-800/80 border border-[#dbeafe] dark:border-gray-800 rounded-[20px] p-4 md:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors duration-200">
-        <div className="flex flex-col">
+      {/* Next Payment, led by what's still needed to write mid-semester exams */}
+      <div className="mt-auto bg-[#e5ecfc] dark:bg-gray-800/80 border border-[#dbeafe] dark:border-gray-800 rounded-[20px] p-4 md:p-5 flex flex-col gap-3 transition-colors duration-200">
+       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col min-w-0">
           <span className="text-[13px] md:text-[14px] font-bold text-gray-900 dark:text-gray-100 mb-0.5">Next Payment</span>
-          <span className="text-[11px] md:text-[12px] text-gray-600 dark:text-gray-400 font-medium leading-tight">Pay for a previous or current semester</span>
+          {examsPending && exams ? (
+            <span className="text-[12px] md:text-[13px] text-gray-700 dark:text-gray-300 font-medium leading-snug">
+              Pay <span className="font-bold text-gray-900 dark:text-gray-100 tabular-nums">{naira(exams.needed)}</span> more to write your mid-semester exams
+            </span>
+          ) : exams?.status === "eligible" ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] md:text-[12px] text-[#176448] dark:text-[#34d399] font-semibold leading-tight">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden />
+              You can write your mid-semester exams
+            </span>
+          ) : (
+            <span className="text-[11px] md:text-[12px] text-gray-600 dark:text-gray-400 font-medium leading-tight">Pay for a previous or current semester</span>
+          )}
         </div>
         <Link 
           href={
-            hasEnoughForSemester
+            canPayNow
               ? (hasSelectedAll
                   ? "/dashboard/finance/fees/payment?step=5"
                   : "/dashboard/finance/fees")
@@ -193,9 +215,24 @@ const hasSelectedAll = isFinancialSubmitted || payState === "in_progress" || has
           }
           className="bg-[#003cbb] hover:bg-[#002470] dark:bg-[#2563EB] dark:hover:bg-[#1D4ED8] text-white rounded-[10px] px-4 md:px-5 py-2.5 text-[13px] md:text-[14px] font-bold flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto transition-colors active:scale-[0.98]"
         >
-          {hasEnoughForSemester ? "Pay School Fees" : "Fund your wallet"}
+          {canPayNow ? "Pay School Fees" : "Fund your wallet"}
           <ArrowRight className="w-4 h-4" />
         </Link>
+       </div>
+
+        {/* Progress towards the 75% needed for mid-semester exams */}
+        {examsPending && exams && (
+          <div className="flex flex-col gap-1.5">
+            <div className="relative h-1.5 rounded-full bg-white/70 dark:bg-gray-900" aria-hidden>
+              <div className="h-full rounded-full bg-[#003cbb] dark:bg-[#4d82ff]" style={{ width: `${exams.percentPaid}%` }} />
+              <div className="absolute -top-0.5 -bottom-0.5 w-0.5 rounded-full bg-gray-500 dark:bg-gray-400" style={{ left: "75%" }} />
+            </div>
+            <span className="text-[11px] md:text-[12px] text-gray-600 dark:text-gray-400 font-medium">
+              {exams.percentPaid}% of this semester&apos;s fees paid · 75% ({naira(exams.target)}) required
+              {exams.status === "wallet-covers" && " · your wallet already covers it"}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

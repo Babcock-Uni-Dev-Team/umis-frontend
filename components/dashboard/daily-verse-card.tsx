@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReadAloudButton } from "@/components/shared/read-aloud-button";
 
 interface BibleVerse {
   text: string;
@@ -102,9 +103,12 @@ export function DailyVerseCard() {
 
         {/* Text Container */}
         <div className="flex flex-col gap-1.5 flex-1 pr-6">
-          <span className="text-[11px] font-bold text-[#868c98] dark:text-gray-400 uppercase tracking-widest leading-none">
-            Daily Encounters
-          </span>
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-[11px] font-bold text-[#868c98] dark:text-gray-400 uppercase tracking-widest leading-none">
+              Daily Encounters
+            </span>
+            <ReadAloudButton id={`verse-${verse.reference}`} text={`${verse.text} ${verse.reference}.`} label="Read the verse aloud" className="-mr-6" />
+          </div>
           <p 
             className="text-[15px] md:text-[16px] font-serif italic text-gray-850 dark:text-gray-250 leading-relaxed font-semibold transition-all duration-300"
             style={{ fontFamily: "Georgia, serif" }}

@@ -3,7 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
-import { X, Send, Bot, Loader2, Sparkles, Lightbulb } from "lucide-react";
+import { X, Send, Bot, Loader2, Sparkles, Lightbulb, Mic, MicOff, AudioLines } from "lucide-react";
+import { VoicePicker } from "@/components/shared/voice-picker";
+import { ReadAloudButton } from "@/components/shared/read-aloud-button";
+import { stopReading, useReadAloud, useVoiceInput } from "@/hooks/use-speech";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStudentAvatar } from "@/hooks/use-student-avatar";
@@ -102,6 +105,11 @@ export function AILiveChat() {
     api: '/api/chat',
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Speak a question instead of typing it; the words fill the box as they're heard
+  const voice = useVoiceInput(setInputValue);
+  // Which voice reads replies aloud; only offered where the browser can speak
+  const { supported: canSpeak } = useReadAloud();
+  const [isVoicePickerOpen, setIsVoicePickerOpen] = useState(false);
 
   useEffect(() => {
     const handleSessionCleared = () => {
@@ -147,6 +155,7 @@ export function AILiveChat() {
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    voice.stop();
     if (!inputValue.trim()) return;
     try {
       sendMessage({ text: inputValue });
@@ -212,14 +221,34 @@ export function AILiveChat() {
               <p className="text-blue-100 text-[12px] font-medium">Your campus guide • Online</p>
             </div>
           </div>
+          <div className="flex items-center gap-1.5">
+          {canSpeak && (
+            <button
+              type="button"
+              onClick={() => setIsVoicePickerOpen(true)}
+              aria-label="Choose Torch's voice"
+              title="Choose Torch's voice"
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <AudioLines className="w-4 h-4" />
+            </button>
+          )}
           <button
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              stopReading();
+              voice.stop();
+              setIsVoicePickerOpen(false);
+              setIsOpen(false);
+            }}
             aria-label="Close Torch"
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
+          </div>
         </div>
+
+        {isVoicePickerOpen && <VoicePicker onClose={() => setIsVoicePickerOpen(false)} />}
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[#f8fafc] dark:bg-[#0f172a]">
@@ -299,7 +328,15 @@ export function AILiveChat() {
                   {m.role === "user" ? (
                     getMessageText(m)
                   ) : (
-                    <ReactMarkdown components={replyMarkdown}>{getMessageText(m)}</ReactMarkdown>
+                    <>
+                      <ReactMarkdown components={replyMarkdown}>{getMessageText(m)}</ReactMarkdown>
+                      {/* Read the reply aloud once it has finished arriving */}
+                      {!(status === "streaming" && m.id === messages[messages.length - 1]?.id) && (
+                        <div className="mt-1.5 -mb-1 -ml-1.5">
+                          <ReadAloudButton id={`torch-${m.id}`} text={getMessageText(m)} label="Read Torch's reply aloud" showLabel />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -330,10 +367,29 @@ export function AILiveChat() {
               type="text"
               value={inputValue}
               onChange={handleTextChange}
-              placeholder="Ask Torch anything…"
+              placeholder={voice.listening ? "Listening…" : "Ask Torch anything…"}
+              aria-label="Your question for Torch"
               className="flex-1 bg-transparent border-none outline-none text-[14px] text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
               disabled={isLoading}
             />
+            {voice.supported && (
+              <button
+                type="button"
+                onClick={() => (voice.listening ? voice.stop() : voice.start())}
+                disabled={isLoading}
+                aria-label={voice.listening ? "Stop listening" : "Speak your question"}
+                aria-pressed={voice.listening}
+                title={voice.listening ? "Stop listening" : "Speak your question"}
+                className={cn(
+                  "w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-colors disabled:opacity-50",
+                  voice.listening
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-[#003cbb] dark:hover:text-[#4d82ff]"
+                )}
+              >
+                {voice.listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+            )}
             <button
               type="submit"
               disabled={isLoading || !inputValue.trim()}
@@ -346,6 +402,11 @@ export function AILiveChat() {
               )}
             </button>
           </form>
+          {voice.error && (
+            <p role="alert" className="mt-2 px-2 text-[12px] text-red-600 dark:text-red-400">
+              {voice.error}
+            </p>
+          )}
         </div>
       </div>
     </>

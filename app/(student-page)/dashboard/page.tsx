@@ -11,6 +11,7 @@ import { OnboardingGuideCard } from "@/components/dashboard/onboarding-guide-car
 import { OnboardingGuideSheet } from "@/components/dashboard/onboarding-guide-sheet";
 import { useUserData } from "@/contexts/user-data-context";
 import { DailyVerseCard } from "@/components/dashboard/daily-verse-card";
+import { SabbathCard } from "@/components/dashboard/sabbath-card";
 import { TodayStrip } from "@/components/dashboard/today-strip";
 import { isFeatureEnabled } from "@/lib/features";
 
@@ -47,8 +48,11 @@ export default function DashboardPage() {
       {/* Personalised Today: check-in, deadlines, attendance and study time */}
       {isFeatureEnabled("today") && <TodayStrip />}
 
-      {/* Bible Verse Encouragement Card */}
-      <DailyVerseCard />
+      {/* Bible verse and Sabbath countdown, side by side on wide screens (stacked below lg) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6 mb-6 items-stretch [&>*]:!mb-0 [&>*]:h-full">
+        <DailyVerseCard />
+        <SabbathCard />
+      </div>
 
       {/* 100L Fresher Persistent Onboarding Checklist Card */}
       {is100L && (

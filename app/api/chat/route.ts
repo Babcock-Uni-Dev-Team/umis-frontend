@@ -4,6 +4,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { chatModels, NVIDIA_BASE_URL, PROVIDER_OPTIONS, type ChatProvider } from '@/lib/ai/chat-models';
 import { withLogging } from '@/lib/logger';
 import { getAIHandbookContext } from '../../../lib/ai/handbook-loader';
+import { getStudentContext } from '@/lib/ai/student-context';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -108,6 +109,8 @@ export const POST = withLogging(async function POST(req: Request) {
   // Live answer when at least one model has its API key
   if (CHAT_MODELS.length > 0) {
     const handbookContext = getAIHandbookContext();
+    // The signed-in student's own record, so questions about their fees or courses get real answers
+    const studentContext = await getStudentContext();
     const system = `You are Torch, the Babcock University student guide inside the Pulse student portal. If asked who you are, introduce yourself as Torch.
 Your job is to assist students with 100% accuracy. Always prioritize the official portal knowledge base and university guidelines provided below. 
 
@@ -124,7 +127,9 @@ If the student's question is not directly covered in the provided guidelines, us
 ---
 OFFICIAL UNIVERSITY PORTAL & FAQ KNOWLEDGE BASE:
 ${handbookContext}
----`;
+---${studentContext ? `
+
+${studentContext}` : ''}`;
 
     let lastError: unknown = null;
     for (const [i, spec] of CHAT_MODELS.entries()) {
