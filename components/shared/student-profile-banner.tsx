@@ -10,6 +10,9 @@ import { UMISResponse } from "@/lib/session";
 import { placeholderAvatarFor } from "@/lib/student/placeholder-avatar";
 import { toTitleCase } from "@/lib/utils";
 import { updateProfilePictureAction } from "@/app/actions/user";
+import { getAcademicProgressAction } from "@/app/actions/academic-details";
+import { useAcademicDetailsStore } from "@/hooks/use-academic-details-store";
+import { useUserData } from "@/contexts/user-data-context";
 import {
   proxyImageUrl,
   extractPicUrl,
@@ -203,6 +206,59 @@ export function StudentProfileBanner({
 
   const [showCgpa, toggleCgpa, mountedCgpa] = usePersistentToggle("showCgpa", true);
   const mounted = mountedCgpa;
+
+  const contextUserData = useUserData();
+  const effectiveUserData = userData ?? contextUserData;
+
+  const {
+    academicProgress,
+    isFetchingAcademicProgress,
+    setAcademicProgress,
+    setAcademicProgressError,
+    setIsFetchingAcademicProgress,
+  } = useAcademicDetailsStore();
+
+  useEffect(() => {
+    if (academicProgress || isFetchingAcademicProgress) return;
+    setIsFetchingAcademicProgress(true);
+    getAcademicProgressAction().then((result) => {
+      if (result.data) {
+        setAcademicProgress(result.data);
+      } else {
+        setAcademicProgressError(result.error ?? "Unknown error");
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isLoadingProgress = isFetchingAcademicProgress && !academicProgress;
+
+  const rawStatus =
+    effectiveUserData?.user_data?.status ??
+    effectiveUserData?.user_data?.academic_information?.status ??
+    "GOOD STANDING";
+  const standing =
+    typeof rawStatus === "string" ? rawStatus.toUpperCase() : "GOOD STANDING";
+
+  let progressPercent: number;
+  let semesterNum: number;
+  let totalSemesters: number;
+
+  if (academicProgress) {
+    progressPercent = academicProgress.progressPercent;
+    semesterNum = academicProgress.registeredSemesters;
+    totalSemesters = academicProgress.totalExpectedSemesters;
+  } else {
+    const currentLevel =
+      effectiveUserData?.user_data?.current_level ??
+      effectiveUserData?.user_data?.academic_information?.study_level ??
+      200;
+    semesterNum = Math.min(
+      Math.max(Math.round((Number(currentLevel) / 100) * 2 - 1), 1),
+      8
+    );
+    totalSemesters = 8;
+    progressPercent = Math.min(Math.round((semesterNum / totalSemesters) * 100), 100);
+  }
 
   // Derived display values from session data (with fallbacks)
   const rawName = userData?.entity_name ?? "—";
@@ -433,18 +489,36 @@ export function StudentProfileBanner({
               <p className="text-[12px] md:text-[14px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">Academic Standing</p>
               <span className="bg-[#c2d6ff] dark:bg-[#162664]/30 text-[#162664] dark:text-[#c2d6ff] px-2.5 py-1 rounded-full text-[10px] md:text-[12px] font-bold flex items-center gap-1.5 uppercase tracking-wide whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#162664] dark:bg-[#4d82ff]"></span>
-                Good standing
+                {standing}
               </span>
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="text-[13px] md:text-[15px] font-semibold text-gray-700 dark:text-gray-300">Academic Progress (Semester 6 of 8)</p>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 bg-white dark:bg-gray-900 h-2 md:h-3 rounded-full overflow-hidden">
-                  <div className="bg-[#003cbb] dark:bg-[#4d82ff] h-full rounded-full" style={{ width: '48%' }}></div>
+              {isLoadingProgress ? (
+                <div className="h-4 w-48 bg-[#c2d6ff]/60 dark:bg-gray-700 rounded-full animate-pulse" />
+              ) : (
+                <p className="text-[13px] md:text-[15px] font-semibold text-gray-700 dark:text-gray-300">
+                  Academic Progress (Semester {semesterNum} of {totalSemesters})
+                </p>
+              )}
+              {isLoadingProgress ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-white dark:bg-gray-900 h-2 md:h-3 rounded-full overflow-hidden">
+                    <div className="bg-[#c2d6ff]/60 dark:bg-gray-700 h-full rounded-full animate-pulse w-full" />
+                  </div>
+                  <div className="h-4 w-8 bg-[#c2d6ff]/60 dark:bg-gray-700 rounded animate-pulse" />
                 </div>
-                <span className="text-[12px] md:text-[14px] font-bold text-gray-900 dark:text-gray-100">48%</span>
-              </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-white dark:bg-gray-900 h-2 md:h-3 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#003cbb] dark:bg-[#4d82ff] h-full rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${progressPercent}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-[12px] md:text-[14px] font-bold text-gray-900 dark:text-gray-100">{progressPercent}%</span>
+                </div>
+              )}
             </div>
           </div>
 

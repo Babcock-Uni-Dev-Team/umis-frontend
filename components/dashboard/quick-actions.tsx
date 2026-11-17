@@ -2,7 +2,7 @@ import { FileText, TrendingUp, Download, CreditCard } from "lucide-react";
 import Link from "next/link";
 
 const actions = [
-  { id: 1, title: "Select Courses", icon: FileText, href: "#", iconBg: "bg-[#ebf1ff] dark:bg-[#003cbb]/20", iconColor: "text-[#003cbb] dark:text-[#4d82ff]" },
+  { id: 1, title: "Select Courses", icon: FileText, href: "/academic-details/courses?tab=current", iconBg: "bg-[#ebf1ff] dark:bg-[#003cbb]/20", iconColor: "text-[#003cbb] dark:text-[#4d82ff]" },
   { id: 2, title: "View Results", icon: TrendingUp, href: "/academic-details/semester-results", iconBg: "bg-[#effaf6] dark:bg-[#12B76A]/20", iconColor: "text-[#12B76A] dark:text-[#34d399]" },
   { id: 3, title: "Export Transcript", icon: Download, href: "/academic-details/transcript", iconBg: "bg-[#fdebff] dark:bg-[#a855f7]/20", iconColor: "text-[#a855f7] dark:text-[#c084fc]" },
   { id: 4, title: "Make Payment", icon: CreditCard, href: "/dashboard/finance", iconBg: "bg-[#ebfaff] dark:bg-[#0ea5e9]/20", iconColor: "text-[#0ea5e9] dark:text-[#38bdf8]" },
